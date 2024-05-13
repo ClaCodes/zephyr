@@ -1045,12 +1045,7 @@ void pthread_exit(void *retval)
 	CODE_UNREACHABLE;
 }
 
-/**
- * @brief Wait for a thread termination.
- *
- * See IEEE 1003.1
- */
-int pthread_join(pthread_t pthread, void **status)
+static int pthread_timedjoin_internal(pthread_t pthread, void **status, k_timeout_t timeout)
 {
 	int ret = 0;
 	struct posix_thread *t = NULL;
@@ -1098,9 +1093,7 @@ int pthread_join(pthread_t pthread, void **status)
 		break;
 	}
 
-	ret = k_thread_join(&t->thread, K_FOREVER);
-	/* other possibilities? */
-	__ASSERT_NO_MSG(ret == 0);
+	ret = k_thread_join(&t->thread, timeout);
 
 	LOG_DBG("Joined pthread %p", &t->thread);
 
@@ -1112,6 +1105,41 @@ int pthread_join(pthread_t pthread, void **status)
 	posix_thread_recycle();
 
 	return 0;
+}
+
+/**
+ * @brief Await a thread termination with timeout.
+ *
+ * Non-portable GNU extension of IEEE 1003.1
+ */
+int pthread_timedjoin_np(pthread_t pthread, void **status, const struct timespec *abstime)
+{
+	if(abstime->tv_sec < 0 || abstime->tv_nsec < 0 || abstime->tv_nsec >= NSEC_PER_SEC) {
+		LOG_DBG("invalid timeout %ld s %ld ns", abstime->tv_sec, abstime->tv_nsec);
+		return EINVAL;
+	}
+
+	return pthread_timedjoin_internal(pthread, status, K_MSEC(timespec_to_timeoutms(abstime));
+}
+
+/**
+ * @brief Check a thread for termination.
+ *
+ * Non-portable GNU extension of IEEE 1003.1
+ */
+int pthread_tryjoin_np(pthread_t pthread, void **status)
+{
+	return pthread_timedjoin_internal(pthread, status, K_NO_WAIT);
+}
+
+/**
+ * @brief Await a thread termination.
+ *
+ * See IEEE 1003.1
+ */
+int pthread_join(pthread_t pthread, void **status)
+{
+	return pthread_timedjoin_internal(pthread, status, K_FOREVER);
 }
 
 /**

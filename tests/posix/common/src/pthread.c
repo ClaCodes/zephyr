@@ -25,6 +25,7 @@
 
 static void *thread_top_exec(void *p1);
 static void *thread_top_term(void *p1);
+static void *thread_alive_1_s(void *p1);
 
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t cvar0 = PTHREAD_COND_INITIALIZER;
@@ -217,6 +218,15 @@ static void *thread_top_term(void *p1)
 	return NULL;
 }
 
+static void *thread_alive_1_s(void *p1)
+{
+	ARG_UNUSED(p1);
+
+	sleep(ONE_SECOND);
+	// TODO needed? pthread_exit(p1);
+	return NULL;
+}
+
 /* Test the internal priority conversion functions */
 int zephyr_to_posix_priority(int z_prio, int *policy);
 int posix_to_zephyr_priority(int priority, int policy);
@@ -369,6 +379,46 @@ ZTEST(pthread, test_pthread_termination)
 	/* TESTPOINT: Try canceling a terminated thread */
 	ret = pthread_cancel(newthread[0]);
 	zassert_equal(ret, ESRCH, "cancelled a terminated thread!");
+}
+
+ZTEST(pthread, test_pthread_termination_with_failure)
+{
+	int32_t i, ret;
+	pthread_t alive_1_s = {0};
+	void *retval;
+
+	/* Creating a threads that exits after 1s*/
+	zassert_ok(pthread_create(&alive_1_s, NULL, thread_alive_1_s, void));
+
+	/* Attempting to join immediately should fail */
+	zassert_equal(pthread_tryjoin_np(&alive_1_s, &retval), -EBUSY);
+
+	/* Attempting to join with a delay of 2/3 sec should fail */
+	zassert_equal(pthread_timedjoin_np(&alive_1_s, &retval, &(struct timespec){.tv_nsec = NSEC_PER_SEC/3*2}), -EAGAIN);
+
+	/* Attempting to join with a delay of 1/2 sec should succeed now */
+	zassert_ok(pthread_timedjoin_np(&alive_1_s, &retval, &(struct timespec){.tv_nsec = NSEC_PER_SEC/2}));
+
+	/* Attempting to join immediately should succeed nwo */
+	zassert_ok(pthread_tryjoin_np(&alive_1_s, &retval));
+}
+
+ZTEST(pthread, test_pthread_termination_timespec)
+{
+	int32_t i, ret;
+	pthread_t alive_1_s = {0};
+	void *retval;
+
+	/* Creating a threads that exits after 1s*/
+	zassert_ok(pthread_create(&alive_1_s, NULL, thread_alive_1_s, void));
+
+	/* Attempting to join with invalid timespecs */
+	zassert_equal(pthread_timedjoin_np(&alive_1_s, &retval, &(struct timespec){.tv_nsec = NSEC_PER_SEC}), -EINVAL);
+	zassert_equal(pthread_timedjoin_np(&alive_1_s, &retval, &(struct timespec){.tv_nsec = -1}), -EINVAL);
+	zassert_equal(pthread_timedjoin_np(&alive_1_s, &retval, &(struct timespec){.tv_sec = -1}), -EINVAL);
+
+	/* Actually join the thread */
+	zassert_equal(pthread_timedjoin_np(&alive_1_s, &retval, &(struct timespec){.tv_sec = LONG_MAX}), -EINVAL);
 }
 
 static void *create_thread1(void *p1)
