@@ -41,18 +41,41 @@ static int data0_cnt;
 static int data1_cnt;
 static int data2_cnt;
 
+/* NET_PRIORITY_BK = 1, */
+/* NET_PRIORITY_BE = 0, */
+/* NET_PRIORITY_EE = 2, */
+/* NET_PRIORITY_CA = 3, */
+/* NET_PRIORITY_VI = 4, */
+/* NET_PRIORITY_VO = 5, */
+/* NET_PRIORITY_IC = 6, */
+/* NET_PRIORITY_NC = 7, */
+
+uint8_t prio(int i) {
+	switch (i) {
+		default:
+		case 0:
+			return NET_PRIORITY_BK;
+		case 1:
+			return NET_PRIORITY_VI;
+		case 2:
+			return NET_PRIORITY_NC;
+	}
+}
+
+
 int main(void)
 {
 	printf("Starting\n");
 	struct net_if *iface = net_if_get_default();
 
-	for (size_t repeat = 0; repeat < 10000; ++repeat) {
+	for (size_t repeat = 0; repeat < 1000; ++repeat) {
 		for (size_t i = 0; i < ARRAY_SIZE(ds); ++i) {
-			struct net_pkt *pkt = net_pkt_rx_alloc_with_buffer(iface, 1500, AF_UNSPEC, 0, K_NO_WAIT);
+			struct net_pkt *pkt = net_pkt_rx_alloc_with_buffer(iface, 50, AF_UNSPEC, 0, K_NO_WAIT);
 			if (!pkt) {
 				printf("Failed to obtain RX buffer\n");
 				continue;
 			}
+			net_pkt_set_priority(pkt, prio(i));
 
 			if (net_pkt_write(pkt, ds[i].data, ds[i].size)) {
 				printf("Failed to append RX buffer to context buffer\n");
@@ -68,6 +91,7 @@ int main(void)
 			}
 		}
 	}
+	k_msleep(2000);
 	printf("data0_cnt=%d\n", data0_cnt);
 	printf("data1_cnt=%d\n", data1_cnt);
 	printf("data2_cnt=%d\n", data2_cnt);
